@@ -1,10 +1,10 @@
 import streamlit as st
-import google.generativeai as genai
 import json
 import os
 import hashlib
 from datetime import datetime
 from supabase import create_client, Client
+from groq import Groq
 
 # ─── KONFIGURACE ───────────────────────────────────────────────
 st.set_page_config(
@@ -16,7 +16,7 @@ st.set_page_config(
 
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
-GEMINI_KEY   = st.secrets["GEMINI_KEY"]
+GROQ_KEY     = st.secrets["GROQ_KEY"]
 
 XP_FLASHKARTA_ZNAM  = 5
 XP_FLASHKARTA_TEZKE = 2
@@ -30,9 +30,16 @@ def get_supabase() -> Client:
 
 supabase = get_supabase()
 
-# ─── GEMINI ────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-2.0-flash')
+# ─── GROQ ──────────────────────────────────────────────────────
+groq_client = Groq(api_key=GROQ_KEY)
+
+def groq_generate(prompt: str) -> str:
+    response = groq_client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=2000,
+    )
+    return response.choices[0].message.content
 
 # ─── HELPERS ───────────────────────────────────────────────────
 def hash_password(p: str) -> str:
@@ -83,7 +90,7 @@ Text: {text[:4000]}
 Odpověz VÝHRADNĚ v JSON bez markdown:
 [{{"otazka":"?","moznosti":["A) ...","B) ...","C) ..."],"spravna_odpoved":"A) ...","vysvetleni":"..."}}]"""
     try:
-        r = model.generate_content(instrukce)
+        r = type("R", (), {"text": groq_generate(instrukce)})())
         t = r.text.strip()
         # Vyčisti markdown
         if t.startswith("```"):
@@ -617,7 +624,7 @@ elif sekce == "✍️ Slohovka":
 Obtížnost: {obtiznost}.
 Téma musí být konkrétní, zajímavé a vhodné pro středoškoláka.
 Uveď jen téma (1-2 věty), žádný další text."""
-                    r = model.generate_content(prompt)
+                    r = type("R", (), {"text": groq_generate(prompt)})())
                     st.session_state.slohovka_tema = r.text.strip()
                     st.session_state.slohovka_utvar = utvar
                     st.rerun()
@@ -677,7 +684,7 @@ Na konci uveď:
 - 1 věc co se povedla
 
 Buď přísný ale spravedlivý. Piš česky."""
-                            r = model.generate_content(prompt)
+                            r = type("R", (), {"text": groq_generate(prompt)})())
                             st.session_state.slohovka_hodnoceni = r.text
                             pridat_xp(user_id, "slohovka_hodnocena", 15)
                             st.rerun()
@@ -870,7 +877,7 @@ PRAVIDLA: Začni úvodní otázkou. Po každé odpovědi polož doplňující ot
 Zahaj zkoušku první otázkou."""
         with st.spinner("Komise se připravuje..."):
             try:
-                resp = model.generate_content(system_prompt)
+                resp = type("R", (), {"text": groq_generate(system_prompt)})())
                 st.session_state.chat_messages = [{"role":"assistant","content":resp.text}]
             except Exception as e:
                 st.error(f"Chyba: {e}")
@@ -891,7 +898,7 @@ Zahaj zkoušku první otázkou."""
                     prompt_k = f"Pokračuj jako maturitní komise.\n{konverzace}\nPokud bylo 4-5 kol, ukonči zkoušku a dej hodnocení (číslo 1-5) s komentářem."
                     with st.spinner("Komise přemýšlí..."):
                         try:
-                            resp = model.generate_content(prompt_k)
+                            resp = type("R", (), {"text": groq_generate(prompt_k)})())
                             odpoved_komise = resp.text
                             st.session_state.chat_messages.append({"role":"assistant","content":odpoved_komise})
                             if any(x in odpoved_komise.lower() for x in ["hodnocení","hodnotím","výborně","chvalitebně","dobrý","dostatečně","nedostatečně"]):
