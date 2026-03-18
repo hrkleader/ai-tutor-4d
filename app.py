@@ -549,7 +549,20 @@ def vykresli_kviz(kviz_key: str, odpovede_key: str, vyhodnotene_key: str, form_k
             uzivatelova = odpovede[i] if i < len(odpovede) else ""
             otazka     = q.get('otazka') or q.get('question') or q.get('otázka') or f'Otázka {i+1}'
             spravna    = q.get('spravna_odpoved') or q.get('correct_answer') or q.get('spravna odpoved') or ''
-            je_spravne = uzivatelova.strip() == spravna.strip()
+            # Porovnani - extrahuj pismeno (A/B/C) z obou odpovedi
+            def extrahuj_pismeno(text):
+                t = text.strip().upper()
+                if t and t[0] in "ABCD":
+                    return t[0]
+                # Zkus najit "A)" nebo "A." nebo "(A)"
+                import re
+                m = re.search(r'\b([A-D])[).\s]', t)
+                return m.group(1) if m else t
+
+            pismeno_uzivatele = extrahuj_pismeno(uzivatelova)
+            pismeno_spravne   = extrahuj_pismeno(spravna)
+            je_spravne = pismeno_uzivatele == pismeno_spravne or uzivatelova.strip() == spravna.strip()
+
             if je_spravne:
                 skore += 1
                 pridat_xp(user_id, xp_akce, XP_KVIZ_SPRAVNE)
