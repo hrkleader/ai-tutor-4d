@@ -2,7 +2,8 @@ import streamlit as st
 import json
 import os
 import hashlib
-from datetime import datetime
+import bcrypt
+from datetime import datetime, date
 from supabase import create_client, Client
 from groq import Groq
 
@@ -56,7 +57,54 @@ def groq_json(prompt: str) -> str:
 
 # ─── HELPERS ───────────────────────────────────────────────────
 def hash_password(p: str) -> str:
-    return hashlib.sha256(p.encode()).hexdigest()
+    # Bcrypt hash - bezpecnejsi nez SHA256
+    try:
+        return bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    except:
+        # Fallback na SHA256 pokud bcrypt selze
+        return hashlib.sha256(p.encode()).hexdigest()
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    # Podporuje bcrypt i stary SHA256
+    try:
+        if stored_hash.startswith('$2b$') or stored_hash.startswith('$2a$'):
+            return bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8'))
+        else:
+            # Stary SHA256 hash
+            return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+    except:
+        return False
+
+def get_streak(user_id: str) -> int:
+    """Spocita pocet po sobe jdoucich dni kdy byl uzivatel aktivni."""
+    try:
+        r = supabase.table("xp_log").select("datum").eq("user_id", user_id).order("datum", desc=True).execute()
+        if not r.data:
+            return 0
+        dny = sorted(set(row["datum"][:10] for row in r.data), reverse=True)
+        if not dny:
+            return 0
+        streak = 0
+        dnes = date.today()
+        for i, den in enumerate(dny):
+            ocekavany = str(dnes - __import__('datetime').timedelta(days=i))
+            if den == ocekavany:
+                streak += 1
+            else:
+                break
+        return streak
+    except:
+        return 0
+
+def pridat_streak_xp(user_id: str):
+    """Pridej bonus XP za dnesni prvni aktivitu (streak)."""
+    try:
+        dnes = str(date.today())
+        r = supabase.table("xp_log").select("id").eq("user_id", user_id).eq("akce", f"streak_{dnes}").execute()
+        if not r.data:
+            pridat_xp(user_id, f"streak_{dnes}", 3)
+    except:
+        pass
 
 def pridat_xp(user_id: str, akce: str, xp: int):
     try:
@@ -142,7 +190,7 @@ st.markdown("""
     color: #00c8ff !important;
 }
 
-/* ─── OPRAVA KLÁVESNICE NA MOBILU ─── */
+/* ─── MOBILNÍ OPTIMALIZACE ─── */
 [data-baseweb="select"] input,
 [data-baseweb="select"] [contenteditable],
 .stSelectbox input {
@@ -152,6 +200,36 @@ st.markdown("""
 }
 input[type="text"], input[type="password"], textarea {
     font-size: 16px !important;
+}
+
+/* Mobilní layout — do 768px */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 1rem 1rem 2rem !important;
+    }
+    h1 { font-size: 1.6rem !important; }
+    h2 { font-size: 1.3rem !important; }
+    .flashcard-front { padding: 28px 20px !important; min-height: 160px !important; }
+    .flashcard-question { font-size: 1.1rem !important; }
+    .flashcard-answer { padding: 20px !important; }
+    .card { padding: 16px !important; }
+    .lb-row { padding: 10px 14px !important; gap: 10px !important; }
+    .lb-name { font-size: 14px !important; }
+    .stTabs [data-baseweb="tab"] { padding: 8px 10px !important; font-size: 11px !important; }
+    .stButton > button { padding: 12px 16px !important; font-size: 12px !important; min-height: 48px !important; }
+    .stFormSubmitButton > button { min-height: 48px !important; }
+    /* Větší touch targety */
+    .stRadio label { padding: 8px 0 !important; font-size: 15px !important; }
+    /* Skryj sidebar na mobilu automaticky */
+    [data-testid="stSidebar"] { min-width: 260px !important; }
+}
+
+/* Streak badge */
+.streak-badge {
+    font-family: 'Space Mono', monospace; font-size: 13px;
+    color: #ff6b35; background: rgba(255,107,53,0.12);
+    border: 1px solid rgba(255,107,53,0.35); border-radius: 20px;
+    padding: 4px 14px; display: inline-block; margin-left: 8px;
 }
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
@@ -292,15 +370,17 @@ if "user" not in st.session_state:
 
 def login(username: str, password: str) -> bool:
     try:
-        ph = hash_password(password)
-        r = supabase.table("users").select("*").eq("username", username).eq("password_hash", ph).execute()
+        r = supabase.table("users").select("*").eq("username", username).execute()
         if r.data:
             u = r.data[0]
+            if not verify_password(password, u.get("password_hash", "")):
+                return False
             if u.get("zablokovany", False):
                 st.error("Tento účet byl zablokován. Kontaktuj správce.")
                 return False
             st.session_state.user = u
             log_login(u["id"])
+            pridat_streak_xp(u["id"])
             return True
     except Exception as e:
         st.error(f"Chyba připojení k databázi: {e}")
@@ -355,7 +435,9 @@ with st.sidebar:
     st.markdown('<span class="badge">4.D SPŠOL</span>', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     xp = get_user_xp(user_id)
-    st.markdown(f'<p style="font-family:\'Space Mono\',monospace;font-size:12px;color:#8899bb;margin-bottom:4px;">👤 {user["display_name"]}</p><span class="xp-badge">⚡ {xp} XP</span>', unsafe_allow_html=True)
+    streak = get_streak(user_id)
+    streak_html = f'<span class="streak-badge">🔥 {streak} dní</span>' if streak >= 2 else ''
+    st.markdown(f'<p style="font-family:\'Space Mono\',monospace;font-size:12px;color:#8899bb;margin-bottom:4px;">👤 {user["display_name"]}</p><span class="xp-badge">⚡ {xp} XP</span>{streak_html}', unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     menu_items = ["🏠 Domů","🤖 Automatizace","📚 Český jazyk","✍️ Slohovka","🃏 Flashkarty","🏆 Leaderboard","🗣️ AI Zkouška"]
     if is_admin:
@@ -862,10 +944,14 @@ elif sekce == "🏆 Leaderboard":
                 medal, cls = medals.get(i,("",""))
                 je_ja = "border-color:rgba(0,200,255,0.5)!important;" if row["username"]==user["username"] else ""
                 ja_tag = '<span style="font-size:11px;color:#00c8ff;margin-left:8px;">(ty)</span>' if row["username"]==user["username"] else ""
-                st.markdown(f'<div class="lb-row" style="{je_ja}"><div class="lb-rank {cls}">{medal or f"#{i}"}</div><div class="lb-name">{row["display_name"]}{ja_tag}</div><div style="font-size:12px;color:#566a8a;font-family:\'Space Mono\',monospace;margin-right:16px;">{row["pocet_aktivit"]} aktivit</div><div class="lb-xp">⚡ {row["celkove_xp"]} XP</div></div>', unsafe_allow_html=True)
+                # Zjisti streak
+                u_id = next((u["id"] for u in users_r.data if u["username"]==row["username"]), None)
+                streak_val = get_streak(u_id) if u_id else 0
+                streak_tag = f'<span style="font-size:12px;color:#ff6b35;margin-right:12px;">🔥 {streak_val}</span>' if streak_val >= 2 else ''
+                st.markdown(f'<div class="lb-row" style="{je_ja}"><div class="lb-rank {cls}">{medal or f"#{i}"}</div><div class="lb-name">{row["display_name"]}{ja_tag}</div>{streak_tag}<div style="font-size:12px;color:#566a8a;font-family:\'Space Mono\',monospace;margin-right:16px;">{row["pocet_aktivit"]} aktivit</div><div class="lb-xp">⚡ {row["celkove_xp"]} XP</div></div>', unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown('<div class="card" style="--accent:#ffd700;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#fff;margin-bottom:12px;">⚡ Jak získat XP?</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div style="font-size:13px;color:#a8bbd8;">✅ Flashkarta „Znám to"</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+5 XP</div><div style="font-size:13px;color:#a8bbd8;">😅 Flashkarta „Skoro"</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+2 XP</div><div style="font-size:13px;color:#a8bbd8;">📝 Správná odpověď v kvízu</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+10 XP</div><div style="font-size:13px;color:#a8bbd8;">🗣️ Dokončená AI zkouška</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+30 XP</div><div style="font-size:13px;color:#a8bbd8;">✍️ Odevzdaná slohovka</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+15 XP</div></div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card" style="--accent:#ffd700;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#fff;margin-bottom:12px;">⚡ Jak získat XP?</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"><div style="font-size:13px;color:#a8bbd8;">✅ Flashkarta „Znám to"</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+5 XP</div><div style="font-size:13px;color:#a8bbd8;">😅 Flashkarta „Skoro"</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+2 XP</div><div style="font-size:13px;color:#a8bbd8;">📝 Správná odpověď v kvízu</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+10 XP</div><div style="font-size:13px;color:#a8bbd8;">🗣️ Dokončená AI zkouška</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+30 XP</div><div style="font-size:13px;color:#a8bbd8;">✍️ Odevzdaná slohovka</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+15 XP</div><div style="font-size:13px;color:#a8bbd8;">🔥 Denní přihlášení (streak)</div><div style="font-family:\'Space Mono\',monospace;font-size:13px;color:#ffd700;">+3 XP</div></div></div>', unsafe_allow_html=True)
     except Exception as e:
         st.error(f"Chyba: {e}")
 
@@ -968,20 +1054,43 @@ elif sekce == "⚙️ Admin panel" and is_admin:
         try:
             uzivatele = supabase.table("users").select("id,username,display_name,is_admin,zablokovany").execute()
             for u in uzivatele.data:
-                col_info, col_btn = st.columns([4,1])
+                col_info, col_blok, col_reset = st.columns([3,1,1])
                 with col_info:
                     role = "👑 Admin" if u["is_admin"] else "👤 Žák"
-                    zablokovany = " 🔴 ZABLOKOVÁN" if u.get("zablokovany") else ""
-                    st.markdown(f"`{u['username']}` — **{u['display_name']}** ({role}){zablokovany}")
-                with col_btn:
+                    zablokovany = " 🔴" if u.get("zablokovany") else ""
+                    u_xp = get_user_xp(u["id"])
+                    u_streak = get_streak(u["id"])
+                    st.markdown(f"`{u['username']}` — **{u['display_name']}** ({role}){zablokovany}  ⚡{u_xp} XP · 🔥{u_streak}d")
+                with col_blok:
                     if not u["is_admin"]:
                         if u.get("zablokovany"):
-                            if st.button("✅ Odblokovat", key=f"unblock_{u['id']}"):
+                            if st.button("✅", key=f"unblock_{u['id']}", help="Odblokovat"):
                                 supabase.table("users").update({"zablokovany":False}).eq("id",u["id"]).execute()
                                 st.rerun()
                         else:
-                            if st.button("🚫 Blokovat", key=f"block_{u['id']}"):
+                            if st.button("🚫", key=f"block_{u['id']}", help="Zablokovat"):
                                 supabase.table("users").update({"zablokovany":True}).eq("id",u["id"]).execute()
+                                st.rerun()
+                with col_reset:
+                    if not u["is_admin"]:
+                        if st.button("🔑", key=f"reset_{u['id']}", help="Reset hesla"):
+                            st.session_state[f"reset_form_{u['id']}"] = True
+                # Reset hesla form
+                if st.session_state.get(f"reset_form_{u['id']}"):
+                    with st.form(f"reset_hesla_{u['id']}"):
+                        st.markdown(f"**Reset hesla pro {u['display_name']}**")
+                        nove_heslo = st.text_input("Nové heslo:", type="password", key=f"nh_{u['id']}")
+                        col_ok, col_zrus = st.columns(2)
+                        with col_ok:
+                            if st.form_submit_button("✅ Uložit"):
+                                if nove_heslo:
+                                    supabase.table("users").update({"password_hash": hash_password(nove_heslo)}).eq("id", u["id"]).execute()
+                                    st.success(f"Heslo pro {u['display_name']} změněno!")
+                                    st.session_state[f"reset_form_{u['id']}"] = False
+                                    st.rerun()
+                        with col_zrus:
+                            if st.form_submit_button("❌ Zrušit"):
+                                st.session_state[f"reset_form_{u['id']}"] = False
                                 st.rerun()
         except Exception as e:
             st.error(f"Chyba: {e}")
