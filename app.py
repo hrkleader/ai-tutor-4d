@@ -41,6 +41,19 @@ def groq_generate(prompt: str) -> str:
     )
     return response.choices[0].message.content
 
+def groq_json(prompt: str) -> str:
+    """Volání Groq s vynuceným JSON výstupem."""
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant. You MUST respond ONLY with valid JSON array. No text before or after. No markdown. No explanation. Just the raw JSON array."},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=2000,
+        response_format={"type": "json_object"},
+    )
+    return response.choices[0].message.content
+
 # ─── HELPERS ───────────────────────────────────────────────────
 def hash_password(p: str) -> str:
     return hashlib.sha256(p.encode()).hexdigest()
@@ -79,37 +92,37 @@ def log_login(user_id: str):
 
 def generuj_kviz(text: str, predmet: str = "odborny") -> list | None:
     if predmet == "cestina":
-        instrukce = f"""Jsi češtinář připravující studenty k maturitě. Vytvoř 3 testové otázky z tohoto literárního rozboru.
+        instrukce = f"""Vytvoř přesně 3 testové otázky z tohoto literárního rozboru pro maturitní přípravu.
 Zaměř se na postavy, děj, literární žánr nebo autora.
-Text: {text[:4000]}
-Odpověz VÝHRADNĚ v JSON bez markdown:
-[{{"otazka":"?","moznosti":["A) ...","B) ...","C) ..."],"spravna_odpoved":"A) ...","vysvetleni":"..."}}]"""
+Text: {text[:3000]}
+
+Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 3 otázek.
+Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved, vysvetleni."""
     else:
-        instrukce = f"""Jsi přísný středoškolský učitel. Vytvoř 3 testové otázky z tohoto textu.
-Text: {text[:4000]}
-Odpověz VÝHRADNĚ v JSON bez markdown:
-[{{"otazka":"?","moznosti":["A) ...","B) ...","C) ..."],"spravna_odpoved":"A) ...","vysvetleni":"..."}}]"""
+        instrukce = f"""Vytvoř přesně 3 testové otázky pro středoškolskou maturitu z tohoto textu.
+Text: {text[:3000]}
+
+Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 3 otázek.
+Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved, vysvetleni."""
     try:
-        r_text = groq_generate(instrukce)
-        t = r_text.strip()
-        # Vyčisti markdown bloky
-        if "```json" in t:
-            t = t.split("```json")[1].split("```")[0]
-        elif t.startswith("```"):
-            t = t.split("```")[1]
-            if t.startswith("json"):
-                t = t[4:]
-        # Najdi JSON pole
-        start = t.find("[")
-        end = t.rfind("]") + 1
-        if start != -1 and end > start:
-            t = t[start:end]
-        t = t.strip()
-        return json.loads(t)
+        r_text = groq_json(instrukce)
+        data = json.loads(r_text)
+        # Groq vraci objekt s klicem "otazky" kvuli response_format=json_object
+        if isinstance(data, dict):
+            for klic in ["otazky", "questions", "kviz", "quiz", "items"]:
+                if klic in data:
+                    return data[klic]
+            # Zkus prvni hodnotu
+            vals = list(data.values())
+            if vals and isinstance(vals[0], list):
+                return vals[0]
+        if isinstance(data, list):
+            return data
+        return None
     except Exception as e:
         import streamlit as _st
         _st.error(f"Detail chyby: {e}")
-        _st.code(f"Raw odpověď Groq:\n{r_text[:500] if 'r_text' in dir() else 'prazdna'}")
+        _st.code(f"Raw: {r_text[:300] if 'r_text' in locals() else 'prazdna'}")
         return None
 
 # ─── CSS ───────────────────────────────────────────────────────
