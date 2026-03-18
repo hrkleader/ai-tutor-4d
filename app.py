@@ -235,22 +235,40 @@ Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) 
     try:
         r_text = groq_json(instrukce)
         data = json.loads(r_text)
-        # Groq vraci objekt s klicem "otazky" kvuli response_format=json_object
+        # Groq muze vratit objekt nebo pole
         if isinstance(data, dict):
-            for klic in ["otazky", "questions", "kviz", "quiz", "items"]:
-                if klic in data:
+            for klic in ["otazky", "questions", "kviz", "quiz", "items", "data"]:
+                if klic in data and isinstance(data[klic], list):
                     return data[klic]
-            # Zkus prvni hodnotu
-            vals = list(data.values())
-            if vals and isinstance(vals[0], list):
-                return vals[0]
+            # Zkus prvni hodnotu ktera je list
+            for val in data.values():
+                if isinstance(val, list) and len(val) > 0:
+                    return val
         if isinstance(data, list):
             return data
         return None
     except Exception as e:
+        # JSON selhal - zkus opravit a parsovat rucne
+        try:
+            import re
+            # Najdi JSON pole v textu
+            if 'r_text' in locals():
+                t = r_text
+                # Odstran failed_generation obal
+                start = t.find('[')
+                end = t.rfind(']') + 1
+                if start != -1 and end > start:
+                    pole_text = t[start:end]
+                    # Oprav null na konci objektu
+                    pole_text = re.sub(r',\s*null\s*}', '}', pole_text)
+                    pole_text = re.sub(r'null', 'null', pole_text)
+                    data = json.loads(pole_text)
+                    if isinstance(data, list):
+                        return data
+        except:
+            pass
         import streamlit as _st
         _st.error(f"Detail chyby: {e}")
-        _st.code(f"Raw: {r_text[:300] if 'r_text' in locals() else 'prazdna'}")
         return None
 
 # ─── CSS ───────────────────────────────────────────────────────
