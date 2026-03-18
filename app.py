@@ -109,6 +109,7 @@ Odpověz VÝHRADNĚ v JSON bez markdown:
     except Exception as e:
         import streamlit as _st
         _st.error(f"Detail chyby: {e}")
+        _st.code(f"Raw odpověď Groq:\n{r_text[:500] if 'r_text' in dir() else 'prazdna'}")
         return None
 
 # ─── CSS ───────────────────────────────────────────────────────
