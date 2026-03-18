@@ -380,16 +380,19 @@ def vykresli_kviz(kviz_key: str, odpovede_key: str, vyhodnotene_key: str, form_k
         skore = 0
         for i, q in enumerate(kviz):
             uzivatelova = odpovede[i] if i < len(odpovede) else ""
-            spravna = q['spravna_odpoved']
+            otazka     = q.get('otazka') or q.get('question') or q.get('otázka') or f'Otázka {i+1}'
+            spravna    = q.get('spravna_odpoved') or q.get('correct_answer') or q.get('spravna odpoved') or ''
             je_spravne = uzivatelova.strip() == spravna.strip()
             if je_spravne:
                 skore += 1
                 pridat_xp(user_id, xp_akce, XP_KVIZ_SPRAVNE)
-                st.success(f"✅ **{q['otazka']}**\nTvoje odpověď: {uzivatelova}")
+                st.success(f"✅ **{otazka}**\nTvoje odpověď: {uzivatelova}")
             else:
-                st.error(f"❌ **{q['otazka']}**\nTvoje odpověď: {uzivatelova}")
+                st.error(f"❌ **{otazka}**\nTvoje odpověď: {uzivatelova}")
                 st.success(f"✔️ Správná odpověď: {spravna}")
-            st.info(f"💡 {q['vysvetleni']}")
+            vysvetleni = q.get('vysvetleni') or q.get('vysvětlení') or q.get('explanation') or q.get('vysvetlení') or ""
+            if vysvetleni:
+                st.info(f"💡 {vysvetleni}")
         st.markdown(f"### Výsledek: {skore} / {len(kviz)}")
         if skore == len(kviz):
             st.balloons()
