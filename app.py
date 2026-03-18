@@ -3,9 +3,11 @@ import json
 import os
 import hashlib
 import bcrypt
-from datetime import datetime, date
+import secrets
+from datetime import datetime, date, timedelta
 from supabase import create_client, Client
 from groq import Groq
+from streamlit_cookies_manager import EncryptedCookieManager
 
 # ─── KONFIGURACE ───────────────────────────────────────────────
 st.set_page_config(
@@ -18,6 +20,12 @@ st.set_page_config(
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_ANON_KEY"]
 GROQ_KEY     = st.secrets["GROQ_KEY"]
+COOKIE_KEY   = st.secrets.get("COOKIE_KEY", "ai-tutor-4d-secret-2026")
+
+# ─── COOKIE MANAGER ────────────────────────────────────────────
+cookies = EncryptedCookieManager(prefix="ai_tutor_", password=COOKIE_KEY)
+if not cookies.ready():
+    st.stop()
 
 XP_FLASHKARTA_ZNAM  = 5
 XP_FLASHKARTA_TEZKE = 2
@@ -74,6 +82,48 @@ def verify_password(password: str, stored_hash: str) -> bool:
             return hashlib.sha256(password.encode()).hexdigest() == stored_hash
     except:
         return False
+
+def vytvor_session_token(user_id: str, user_agent: str = "") -> str:
+    """Vytvori session token a ulozi ho do Supabase."""
+    token = secrets.token_urlsafe(32)
+    expiry = (datetime.now() + timedelta(days=30)).isoformat()
+    try:
+        # Zneplatni stare tokeny
+        supabase.table("session_tokens").update({"platny": False}).eq("user_id", user_id).execute()
+        # Vytvor novy token
+        supabase.table("session_tokens").insert({
+            "user_id": user_id,
+            "token": token,
+            "user_agent": user_agent[:200],
+            "expiry": expiry,
+            "platny": True,
+            "created_at": datetime.now().isoformat()
+        }).execute()
+    except:
+        pass
+    return token
+
+def overit_token(token: str) -> dict | None:
+    """Overi token a vrati uzivatele nebo None."""
+    try:
+        r = supabase.table("session_tokens").select("*, users(*)").eq("token", token).eq("platny", True).execute()
+        if not r.data:
+            return None
+        row = r.data[0]
+        # Zkontroluj expiry
+        if datetime.fromisoformat(row["expiry"]) < datetime.now():
+            supabase.table("session_tokens").update({"platny": False}).eq("token", token).execute()
+            return None
+        return row.get("users")
+    except:
+        return None
+
+def zneplatnit_token(token: str):
+    """Zneplatni konkretni token (logout)."""
+    try:
+        supabase.table("session_tokens").update({"platny": False}).eq("token", token).execute()
+    except:
+        pass
 
 def get_streak(user_id: str) -> int:
     """Spocita pocet po sobe jdoucich dni kdy byl uzivatel aktivni."""
@@ -381,17 +431,37 @@ def login(username: str, password: str) -> bool:
             st.session_state.user = u
             log_login(u["id"])
             pridat_streak_xp(u["id"])
+            # Vytvor session token a uloz do cookie
+            ua = st.context.headers.get("user-agent", "") if hasattr(st, 'context') else ""
+            token = vytvor_session_token(u["id"], ua)
+            cookies["session_token"] = token
+            cookies.save()
             return True
     except Exception as e:
         st.error(f"Chyba připojení k databázi: {e}")
     return False
 
 def logout():
+    token = cookies.get("session_token", "")
+    if token:
+        zneplatnit_token(token)
+        cookies["session_token"] = ""
+        cookies.save()
     st.session_state.clear()
     st.rerun()
 
+# ── AUTO-LOGIN PŘES COOKIE ──────────────────────
+if st.session_state.get("user") is None:
+    token = cookies.get("session_token", "")
+    if token:
+        u = overit_token(token)
+        if u:
+            if not u.get("zablokovany", False):
+                st.session_state.user = u
+                pridat_streak_xp(u["id"])
+
 # ── PŘIHLAŠOVACÍ OBRAZOVKA ──────────────────────
-if st.session_state.user is None:
+if st.session_state.get("user") is None:
     st.markdown('<div class="login-wrap"><div class="login-title">AI Tutor 4.D</div><p style="text-align:center;color:#566a8a;font-family:\'Space Mono\',monospace;font-size:12px;letter-spacing:0.1em;text-transform:uppercase;">SPŠOL · Maturita 2026</p></div>', unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -404,6 +474,7 @@ if st.session_state.user is None:
                     st.rerun()
                 else:
                     st.error("Špatné jméno nebo heslo.")
+        st.markdown('<p style="text-align:center;font-size:12px;color:#3a4a66;margin-top:8px;">Na tomto zařízení budeš přihlášen po dobu 30 dní.</p>', unsafe_allow_html=True)
     st.stop()
 
 # ══════════════════════════════════════════════
@@ -1142,6 +1213,22 @@ elif sekce == "⚙️ Admin panel" and is_admin:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+            # Aktivni session tokeny
+            st.markdown("---")
+            st.subheader("Aktivní přihlášení")
+            try:
+                tok_r = supabase.table("session_tokens").select("user_id,user_agent,created_at").eq("platny",True).order("created_at",desc=True).execute()
+                if not tok_r.data:
+                    st.info("Žádné aktivní tokeny.")
+                else:
+                    for t in tok_r.data:
+                        u_info = users_map.get(t["user_id"],{"display_name":"Neznámý","username":"?"})
+                        cas = t.get("created_at","")[:16].replace("T"," ")
+                        ua = t.get("user_agent","?")[:80]
+                        st.markdown(f"**{u_info['display_name']}** — `{cas}` — {ua}")
+            except:
+                st.info("Tabulka session_tokens zatím neexistuje.")
+
         except Exception as e:
             st.warning(f"Tabulka login_log neexistuje. Spusť SQL v Supabase:\n\n`CREATE TABLE login_log (id uuid primary key default gen_random_uuid(), user_id uuid references users(id) on delete cascade, ip_adresa text, cas timestamp default now());`")
 

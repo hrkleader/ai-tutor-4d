@@ -2,3 +2,4 @@ streamlit
 groq
 supabase
 bcrypt
+streamlit-cookies-manager
