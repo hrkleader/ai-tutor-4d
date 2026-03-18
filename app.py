@@ -92,14 +92,23 @@ Odpověz VÝHRADNĚ v JSON bez markdown:
     try:
         r_text = groq_generate(instrukce)
         t = r_text.strip()
-        # Vyčisti markdown
-        if t.startswith("```"):
+        # Vyčisti markdown bloky
+        if "```json" in t:
+            t = t.split("```json")[1].split("```")[0]
+        elif t.startswith("```"):
             t = t.split("```")[1]
             if t.startswith("json"):
                 t = t[4:]
+        # Najdi JSON pole
+        start = t.find("[")
+        end = t.rfind("]") + 1
+        if start != -1 and end > start:
+            t = t[start:end]
         t = t.strip()
         return json.loads(t)
-    except:
+    except Exception as e:
+        import streamlit as _st
+        _st.error(f"Detail chyby: {e}")
         return None
 
 # ─── CSS ───────────────────────────────────────────────────────
