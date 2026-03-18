@@ -159,6 +159,20 @@ hr { border:none; border-top:1px solid rgba(0,200,255,0.1) !important; margin:24
 .stRadio label { color:#a8bbd8 !important; font-size:14px !important; }
 .stSpinner > div { border-top-color:#00c8ff !important; }
 
+/* ─── OPRAVA KLAVESNICE NA MOBILU ─── */
+select, [data-baseweb="select"] input {
+    font-size: 16px !important;
+}
+[data-baseweb="select"] [contenteditable] {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    pointer-events: none !important;
+}
+[data-baseweb="select"] input[readonly] {
+    font-size: 16px !important;
+    pointer-events: none !important;
+}
+
 /* ── FLASHKARTA ── */
 .flashcard-front {
     background: linear-gradient(135deg, #111827, #1a2035);
@@ -569,8 +583,25 @@ elif sekce == "🏆 Leaderboard":
     st.markdown("---")
 
     try:
-        lb_data = supabase.table("leaderboard").select("*").execute()
-        rows = lb_data.data
+        users_r = supabase.table("users").select("id, display_name, username").eq("is_admin", False).execute()
+        xp_r = supabase.table("xp_log").select("user_id, xp_ziskano").execute()
+
+        xp_by_user = {}
+        aktivita_by_user = {}
+        for row in xp_r.data:
+            uid = row["user_id"]
+            xp_by_user[uid] = xp_by_user.get(uid, 0) + row["xp_ziskano"]
+            aktivita_by_user[uid] = aktivita_by_user.get(uid, 0) + 1
+
+        rows = []
+        for u in users_r.data:
+            rows.append({
+                "display_name": u["display_name"],
+                "username": u["username"],
+                "celkove_xp": xp_by_user.get(u["id"], 0),
+                "pocet_aktivit": aktivita_by_user.get(u["id"], 0)
+            })
+        rows.sort(key=lambda x: x["celkove_xp"], reverse=True)
 
         if not rows:
             st.info("Zatím žádná data. Začni procházet flashkarty a sbírej XP!")
@@ -911,29 +942,36 @@ Lomítka escapuj jako \\\\. Odpověz POUZE v JSON:
                             st.error(f"Chyba: {e}")
 
         if st.session_state.kviz_data:
-            with st.form("kviz_f"):
-                odpovede = []
-                for i, q in enumerate(st.session_state.kviz_data):
-                    st.write(f"**{i+1}. {q['otazka']}**")
-                    odpovede.append(st.radio("", q['moznosti'], key=f"q{i}"))
-                    st.markdown("---")
-                if st.form_submit_button("✅ Zkontrolovat"):
-                    st.session_state.vyhodnotene = True
+            if not st.session_state.vyhodnotene:
+                with st.form("kviz_f"):
+                    odpovede = []
+                    for i, q in enumerate(st.session_state.kviz_data):
+                        st.write(f"**{i+1}. {q['otazka']}**")
+                        odpovede.append(st.radio("", q['moznosti'], key=f"q{i}"))
+                        st.markdown("---")
+                    if st.form_submit_button("✅ Zkontrolovat"):
+                        st.session_state.kviz_odpovede = odpovede
+                        st.session_state.vyhodnotene = True
+                        st.rerun()
 
             if st.session_state.vyhodnotene:
+                odpovede = st.session_state.get("kviz_odpovede", [])
                 skore = 0
                 for i, q in enumerate(st.session_state.kviz_data):
-                    if odpovede[i] == q['spravna_odpoved']:
+                    uzivatelova = odpovede[i] if i < len(odpovede) else ""
+                    if uzivatelova == q['spravna_odpoved']:
                         skore += 1
                         pridat_xp(user_id, "kviz_spravne", XP_KVIZ_SPRAVNE)
-                        st.success(f"✅ {q['otazka']}")
+                        st.success(f"✅ **{q['otazka']}**\nTvoje odpověď: {uzivatelova}")
                     else:
-                        st.error(f"❌ {odpovede[i]}")
-                        st.success(f"✔️ Správně: {q['spravna_odpoved']}")
+                        st.error(f"❌ **{q['otazka']}**\nTvoje odpověď: {uzivatelova}")
+                        st.success(f"✔️ Správná odpověď: {q['spravna_odpoved']}")
                     st.info(f"💡 {q['vysvetleni']}")
                 st.markdown(f"**Výsledek: {skore}/{len(st.session_state.kviz_data)}**")
                 if st.button("🔄 Nový kvíz"):
                     st.session_state.kviz_data = None
+                    st.session_state.kviz_odpovede = []
+                    st.session_state.vyhodnotene = False
                     st.rerun()
 
     with tab_z:
