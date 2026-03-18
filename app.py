@@ -189,19 +189,49 @@ def log_login(user_id: str):
         pass
 
 def generuj_kviz(text: str, predmet: str = "odborny") -> list | None:
+    import random as _random
+    # Nahodny seed aby se otazky pokazde lisily
+    seed = _random.randint(1000, 9999)
+    aspekty_cestina = _random.sample([
+        "literární druh a žánr díla",
+        "hlavní postavy a jejich charakteristika",
+        "děj a kompozice díla",
+        "autor a historický kontext",
+        "jazyk a literární prostředky",
+        "témata a motivy díla",
+        "vztahy mezi postavami",
+        "symbolika a alegorie v díle"
+    ], 5)
+    aspekty_odborny = _random.sample([
+        "základní definice a pojmy",
+        "praktické příklady a použití",
+        "historický vývoj a vznik",
+        "technické principy a funkce",
+        "porovnání s příbuznými tématy",
+        "konkrétní hodnoty a parametry",
+        "výhody a nevýhody",
+        "reálné aplikace v praxi"
+    ], 5)
     if predmet == "cestina":
-        instrukce = f"""Vytvoř přesně 3 testové otázky z tohoto literárního rozboru pro maturitní přípravu.
-Zaměř se na postavy, děj, literární žánr nebo autora.
-Text: {text[:3000]}
+        instrukce = f"""Jsi zkušený češtinář připravující studenty na maturitu. Seed: {seed}
+Vytvoř přesně 5 RŮZNÝCH testových otázek z tohoto literárního rozboru.
+Každá otázka musí být z JINÉ oblasti: {", ".join(aspekty_cestina)}
+Text: {text[:3500]}
 
-Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 3 otázek.
-Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved, vysvetleni."""
+DŮLEŽITÉ: Otázky musí být rozmanité, ne všechny o stejné věci. Každá správná odpověď musí být jiné písmeno (ne vždy A).
+
+Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 5 otázek.
+Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved (jen písmeno A nebo B nebo C), vysvetleni."""
     else:
-        instrukce = f"""Vytvoř přesně 3 testové otázky pro středoškolskou maturitu z tohoto textu.
-Text: {text[:3000]}
+        instrukce = f"""Jsi přísný středoškolský učitel. Seed: {seed}
+Vytvoř přesně 5 RŮZNÝCH testových otázek pro maturitu z tohoto textu.
+Každá otázka musí být z JINÉ oblasti: {", ".join(aspekty_odborny)}
+Text: {text[:3500]}
 
-Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 3 otázek.
-Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved, vysvetleni."""
+DŮLEŽITÉ: Otázky musí být rozmanité. Střídej těžkost. Každá správná odpověď musí být jiné písmeno (ne vždy A).
+
+Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 5 otázek.
+Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved (jen písmeno A nebo B nebo C), vysvetleni."""
     try:
         r_text = groq_json(instrukce)
         data = json.loads(r_text)
@@ -660,7 +690,7 @@ elif sekce == "🤖 Automatizace":
     with tab_k:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.session_state.kviz_data is None:
-            st.markdown('<div class="card" style="--accent:#7c3aed;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#fff;margin-bottom:8px;">📝 Kvíz z tohoto okruhu</div><p style="color:#566a8a;margin:0;font-size:13px;">AI vygeneruje 3 otázky přesně z tohoto materiálu.</p></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card" style="--accent:#7c3aed;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#fff;margin-bottom:8px;">📝 Kvíz z tohoto okruhu</div><p style="color:#566a8a;margin:0;font-size:13px;">AI vygeneruje 5 různých otázek z tohoto materiálu.</p></div>', unsafe_allow_html=True)
             if st.button("⚡ Vygenerovat kvíz"):
                 if not text_otazky:
                     st.error("Nejprve vlož materiál do složky obsah/.")
@@ -812,10 +842,30 @@ elif sekce == "✍️ Slohovka":
         if st.button("🎲 Vygenerovat maturitní téma"):
             with st.spinner("AI vymýšlí téma..."):
                 try:
-                    prompt = f"""Vygeneruj 1 maturitní slohové téma pro útvar: {utvar}.
-Obtížnost: {obtiznost}.
-Téma musí být konkrétní, zajímavé a vhodné pro středoškoláka.
-Uveď jen téma (1-2 věty), žádný další text."""
+                    import random as _rand
+                    nahodne = _rand.randint(1,999)
+                    temata_priklady = {
+                        "Úvaha": ["Má smysl bojovat za pravdu, i když víme, že prohrajeme?", "Je technologický pokrok pro lidstvo požehnáním, nebo hrozbou?", "Co znamená být dobrým člověkem v dnešní době?"],
+                        "Popis": ["Popiš místo, ke kterému máš silný citový vztah.", "Popiš atmosféru večerního města.", "Popiš pracovní postup při řešení technického problému."],
+                        "Charakteristika": ["Charakterizuj člověka, který tě nejvíce ovlivnil.", "Charakterizuj literární postavu která tě zaujala.", "Charakterizuj ideálního vedoucího týmu."],
+                        "Vypravování": ["Vypravuj o situaci, kdy ses musel/a rozhodnout mezi dvěma špatnými možnostmi.", "Vypravuj o prvním dni v novém prostředí.", "Vypravuj o zážitku, který změnil tvůj pohled na věc."],
+                        "Životopis": ["Napiš životopis fiktivní osobnosti z oblasti techniky.", "Napiš vlastní strukturovaný životopis.", "Napiš životopis historické osobnosti dle vlastního výběru."],
+                        "Fejeton": ["Napiš fejeton o moderním fenoménu sociálních sítí.", "Napiš fejeton o každodenních absurditách školního života.", "Napiš fejeton o vztahu mladé generace k technologiím."],
+                    }
+                    priklad = _rand.choice(temata_priklady.get(utvar, ["Napiš o tématu dle vlastního výběru."]))
+                    obtiznost_popis = {"Lehká": "jednoduché, přímočaré", "Střední": "vyžadující vlastní názor a argumentaci", "Těžká": "filozoficky nebo eticky náročné"}
+                    prompt = f"""Vygeneruj 1 konkrétní maturitní slohové téma pro útvar {utvar}. Seed: {nahodne}
+Obtížnost: {obtiznost} ({obtiznost_popis.get(obtiznost, "")})
+Příklad podobného tématu: {priklad}
+
+Požadavky:
+- Téma musí být KONKRÉTNÍ a JASNĚ FORMULOVANÉ jako zadání (ne jen heslo)
+- Vhodné pro českého středoškoláka
+- Délka: 1-2 věty
+- Začni přímo zadáním, bez úvodu jako "Téma:" nebo "Zde je téma:"
+- Formuluj jako výzvu nebo otázku k zamyšlení
+
+Uveď POUZE samotné téma, žádný komentář."""
                     r_text = groq_generate(prompt)
                     st.session_state.slohovka_tema = r_text.strip()
                     st.session_state.slohovka_utvar = utvar
