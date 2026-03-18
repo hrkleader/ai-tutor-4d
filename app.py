@@ -51,15 +51,24 @@ def groq_generate(prompt: str) -> str:
     return response.choices[0].message.content
 
 def groq_json(prompt: str) -> str:
-    """Volání Groq s vynuceným JSON výstupem."""
+    """Volání Groq s vynuceným JSON výstupem - robustni verze."""
+    system = """You are a JSON generator. You MUST output ONLY valid JSON.
+CRITICAL RULES:
+1. Output ONLY a JSON object like: {"otazky": [...]}
+2. Each item in array must have: otazka, moznosti (array of 3 strings), spravna_odpoved (single letter A B or C), vysvetleni
+3. moznosti must be a proper JSON array: ["A) text", "B) text", "C) text"]
+4. NO trailing commas, NO null values, NO comments
+5. All strings must use double quotes
+6. No nested quotes inside strings - use single quotes inside strings if needed"""
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "You are a helpful assistant. You MUST respond ONLY with valid JSON array. No text before or after. No markdown. No explanation. Just the raw JSON array."},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt}
         ],
-        max_tokens=2000,
+        max_tokens=3000,
         response_format={"type": "json_object"},
+        temperature=0.3,
     )
     return response.choices[0].message.content
 
@@ -213,25 +222,23 @@ def generuj_kviz(text: str, predmet: str = "odborny") -> list | None:
         "reálné aplikace v praxi"
     ], 5)
     if predmet == "cestina":
-        instrukce = f"""Jsi zkušený češtinář připravující studenty na maturitu. Seed: {seed}
-Vytvoř přesně 5 RŮZNÝCH testových otázek z tohoto literárního rozboru.
-Každá otázka musí být z JINÉ oblasti: {", ".join(aspekty_cestina)}
-Text: {text[:3500]}
+        instrukce = f"""Create 5 quiz questions about this Czech literature text. Seed for variety: {seed}
+Cover these different aspects: {", ".join(aspekty_cestina[:5])}
 
-DŮLEŽITÉ: Otázky musí být rozmanité, ne všechny o stejné věci. Každá správná odpověď musí být jiné písmeno (ne vždy A).
+TEXT: {text[:3000]}
 
-Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 5 otázek.
-Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved (jen písmeno A nebo B nebo C), vysvetleni."""
+Output JSON object with key "otazky" containing array of 5 objects.
+Each object: otazka (string), moznosti (array of exactly 3 strings starting with "A) " "B) " "C) "), spravna_odpoved (single letter: A or B or C), vysvetleni (string)
+Vary the correct answers - use A, B, and C roughly equally. Keep all string values simple without nested quotes."""
     else:
-        instrukce = f"""Jsi přísný středoškolský učitel. Seed: {seed}
-Vytvoř přesně 5 RŮZNÝCH testových otázek pro maturitu z tohoto textu.
-Každá otázka musí být z JINÉ oblasti: {", ".join(aspekty_odborny)}
-Text: {text[:3500]}
+        instrukce = f"""Create 5 quiz questions about this technical text. Seed for variety: {seed}
+Cover these different aspects: {", ".join(aspekty_odborny[:5])}
 
-DŮLEŽITÉ: Otázky musí být rozmanité. Střídej těžkost. Každá správná odpověď musí být jiné písmeno (ne vždy A).
+TEXT: {text[:3000]}
 
-Odpověz POUZE jako JSON objekt s klíčem "otazky" obsahujícím pole 5 otázek.
-Každá otázka má: otazka, moznosti (pole 3 možností začínajících A) B) C)), spravna_odpoved (jen písmeno A nebo B nebo C), vysvetleni."""
+Output JSON object with key "otazky" containing array of 5 objects.
+Each object: otazka (string in Czech), moznosti (array of exactly 3 strings starting with "A) " "B) " "C) "), spravna_odpoved (single letter: A or B or C), vysvetleni (string in Czech)
+Vary the correct answers - use A, B, and C roughly equally. Keep all string values simple without nested quotes."""
     try:
         r_text = groq_json(instrukce)
         data = json.loads(r_text)
