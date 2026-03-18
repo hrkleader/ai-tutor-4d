@@ -34,7 +34,7 @@ supabase = get_supabase()
 
 # ─── GEMINI ────────────────────────────────────────────────────
 genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-2.5-pro')
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # ─── HESLO — HASH ──────────────────────────────────────────────
 def hash_password(password: str) -> str:
