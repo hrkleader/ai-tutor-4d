@@ -90,8 +90,8 @@ Text: {text[:4000]}
 Odpověz VÝHRADNĚ v JSON bez markdown:
 [{{"otazka":"?","moznosti":["A) ...","B) ...","C) ..."],"spravna_odpoved":"A) ...","vysvetleni":"..."}}]"""
     try:
-        r = type("R", (), {"text": groq_generate(instrukce)})())
-        t = r.text.strip()
+        r_text = groq_generate(instrukce)
+        t = r_text.strip()
         # Vyčisti markdown
         if t.startswith("```"):
             t = t.split("```")[1]
@@ -624,8 +624,8 @@ elif sekce == "✍️ Slohovka":
 Obtížnost: {obtiznost}.
 Téma musí být konkrétní, zajímavé a vhodné pro středoškoláka.
 Uveď jen téma (1-2 věty), žádný další text."""
-                    r = type("R", (), {"text": groq_generate(prompt)})())
-                    st.session_state.slohovka_tema = r.text.strip()
+                    r_text = groq_generate(prompt)
+                    st.session_state.slohovka_tema = r_text.strip()
                     st.session_state.slohovka_utvar = utvar
                     st.rerun()
                 except Exception as e:
@@ -684,8 +684,8 @@ Na konci uveď:
 - 1 věc co se povedla
 
 Buď přísný ale spravedlivý. Piš česky."""
-                            r = type("R", (), {"text": groq_generate(prompt)})())
-                            st.session_state.slohovka_hodnoceni = r.text
+                            r_text = groq_generate(prompt)
+                            st.session_state.slohovka_hodnoceni = r_text
                             pridat_xp(user_id, "slohovka_hodnocena", 15)
                             st.rerun()
                         except Exception as e:
@@ -877,8 +877,8 @@ PRAVIDLA: Začni úvodní otázkou. Po každé odpovědi polož doplňující ot
 Zahaj zkoušku první otázkou."""
         with st.spinner("Komise se připravuje..."):
             try:
-                resp = type("R", (), {"text": groq_generate(system_prompt)})())
-                st.session_state.chat_messages = [{"role":"assistant","content":resp.text}]
+                uvod = groq_generate(system_prompt)
+                st.session_state.chat_messages = [{"role":"assistant","content":uvod}]
             except Exception as e:
                 st.error(f"Chyba: {e}")
 
@@ -898,8 +898,8 @@ Zahaj zkoušku první otázkou."""
                     prompt_k = f"Pokračuj jako maturitní komise.\n{konverzace}\nPokud bylo 4-5 kol, ukonči zkoušku a dej hodnocení (číslo 1-5) s komentářem."
                     with st.spinner("Komise přemýšlí..."):
                         try:
-                            resp = type("R", (), {"text": groq_generate(prompt_k)})())
-                            odpoved_komise = resp.text
+                            komise_odpoved = groq_generate(prompt_k)
+                            odpoved_komise = uvod
                             st.session_state.chat_messages.append({"role":"assistant","content":odpoved_komise})
                             if any(x in odpoved_komise.lower() for x in ["hodnocení","hodnotím","výborně","chvalitebně","dobrý","dostatečně","nedostatečně"]):
                                 pridat_xp(user_id,"zkouska_dokoncena",XP_ZKOUSKA)
